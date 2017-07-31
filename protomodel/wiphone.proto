@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package protomodel;
+
+message Credentials {
+  string Operator = 1;
+  string Username = 2;
+  string Password = 3;
+}
+
+message ConsumptionResponse {
+  int64 InternetTotal = 1;
+  int64 InternetConsumed = 2;
+  int32 CallTotal = 3;
+  int32 CallConsumed = 4;
+  int32 periodStart = 5;
+  int32 periodEnd = 6;
+  int32 updatedAt = 7;
+  string phoneNumber = 8;
+}
+
+
+message AnonymousConsumptionRequest {
+  string DeviceId = 1;
+  Credentials Credentials = 2;
+  string phoneNumber = 3;
+}
+

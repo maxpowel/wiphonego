@@ -52,6 +52,7 @@ func Index2(w http.ResponseWriter, r *http.Request) {
 type AnonymousConsumptionValidator struct {
 	DeviceId  string `validate:"required"`
 	Credentials CredentialsValidator `validate:"required"`
+	PhoneNumber  string `validate:"required"`
 }
 
 func GetAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) error {
@@ -62,7 +63,13 @@ func GetAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *ht
 	}
 	//fmt.Println(requestData.DeviceId)
 	//requestData.DeviceId = "lolazo"
-	//requestData.Credentials = &CredentialsProto{Username:"pepe"}
+	/*requestData.Credentials = &protomodel.Credentials{}
+	requestData.Credentials.Operator = "masmovil"
+	requestData.Credentials.Username = "222alvaro_gg@hotmail.com"
+	requestData.Credentials.Password = "22MBAR4B1"
+	requestData.PhoneNumber = "677077536"
+	requestData.DeviceId = "5656"*/
+
 	k := &AnonymousConsumptionValidator{}
 	fmt.Println(requestData)
 	if requestData.Credentials != nil {
@@ -100,7 +107,10 @@ func GetLastAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r
 	response.CallTotal = int32(consumptionData.CallTotal)
 	response.InternetConsumed = consumptionData.InternetConsumed
 	response.InternetTotal = consumptionData.InternetTotal
-	response.RenewTime = int32(consumptionData.RenewTime.Unix())
+	response.PeriodStart = int32(consumptionData.PeriodStart.Unix())
+	response.PeriodEnd = int32(consumptionData.PeriodEnd.Unix())
+	response.UpdatedAt = int32(consumptionData.UpdatedAt.Unix())
+	response.PhoneNumber = consumptionData.PhoneNumber
 
 	dataData, err := proto.Marshal(response)
 
@@ -151,6 +161,10 @@ func anonymousConsumptionSignature (data *protomodel.AnonymousConsumptionRequest
 			{
 				Type:  "string",
 				Value: data.Credentials.Operator,
+			},
+			{
+				Type:  "string",
+				Value: data.PhoneNumber,
 			},
 			{
 				Type:  "string",

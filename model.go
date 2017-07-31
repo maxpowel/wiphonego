@@ -11,8 +11,10 @@ type UserDeviceConsumption struct {
 	InternetTotal int64
 	CallConsumed int
 	CallTotal int
-	RenewTime time.Time
+	PeriodStart time.Time
+	PeriodEnd time.Time
 	Device UserDevice
+	PhoneNumber string
 	DeviceId int
 }
 
