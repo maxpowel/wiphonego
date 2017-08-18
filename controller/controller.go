@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
 	"github.com/RichardKnop/machinery/v1/tasks"
-	"time"
 	"github.com/RangelReale/osin"
 	"github.com/jinzhu/gorm"
 	"io/ioutil"
@@ -25,15 +24,14 @@ type CredentialsValidator struct {
 }
 
 
-func Me(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) error{
-	user, err := apirest.GetUser(kernel, r)
-	if err != nil {
-		fmt.Fprintln(w, err)
-	} else {
-		fmt.Fprintln(w, user.Username)
+func Me(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request, user *usermngr.User) (proto.Message, error){
+
+	var ts proto.Message = &protomodel.UseLoginResponse{
+		Token: "333",
 	}
 
-	return nil
+	return ts, nil
+	//return ts, apirest.StatusError{Code:401, Err: fmt.Errorf("LOL")}
 }
 
 func Index(w http.ResponseWriter, r *http.Request) {
@@ -46,41 +44,42 @@ func Index(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, u.Salt)
 }
 
-func Login(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) error{
+func Login(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) (proto.Message, error){
 	loginData := &protomodel.UserLogin{}
 	err := apirest.GetBody(loginData, r)
 	if err != nil {
-		return apirest.StatusError{Code:401, Err: err}
+		return nil, apirest.StatusError{Code:401, Err: err}
 	}
 
 	userManager := kernel.Container.MustGet("user_manager").(*usermngr.Manager)
 	user, err := userManager.FindUser(loginData.Username)
 	if err != nil {
-		return apirest.StatusError{Code:404, Err: err}
+		return nil, apirest.StatusError{Code:404, Err: err}
 	}
 
 	if usermngr.CheckPassword(user, loginData.Password) == nil {
 		token, err := apirest.GenerateToken(kernel, user)
 		if err != nil {
-			return apirest.StatusError{Code:500, Err: err}
+			return nil, apirest.StatusError{Code:500, Err: err}
 		} else {
-			ts := protomodel.UseLoginResponse{
+			ts := &protomodel.UseLoginResponse{
 				Token: token,
 			}
 
-			data, err := proto.Marshal(&ts)
+			/*data, err := proto.Marshal(&ts)
 			if err != nil {
 				return apirest.StatusError{Code:500, Err: err}
 			}
 
-			w.Write(data)
+			w.Write(data)*/
+			return ts, nil
 		}
 		//w.Write()
 	} else {
-		return apirest.StatusError{Code:401, Err: fmt.Errorf("Invalid password")}
+		return nil, apirest.StatusError{Code:401, Err: fmt.Errorf("Invalid password")}
 	}
 
-	return nil
+	return nil, nil
 }
 
 func TodoIndex(w http.ResponseWriter, r *http.Request) {
@@ -109,11 +108,11 @@ type AnonymousConsumptionValidator struct {
 	PhoneNumber  string `validate:"required"`
 }
 
-func GetAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) error {
+func GetAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) (proto.Message, error) {
 	requestData := &protomodel.AnonymousConsumptionRequest{}
 	err := apirest.GetBody(requestData, r)
 	if err != nil {
-		return apirest.StatusError{401, err}
+		return nil, apirest.StatusError{401, err}
 	}
 	//fmt.Println(requestData.DeviceId)
 	//requestData.DeviceId = "lolazo"
@@ -136,19 +135,18 @@ func GetAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *ht
 	_, err = apirest.Validate(requestData, k)
 
 	if err != nil {
-		return apirest.StatusError{402, err}
+		return nil, apirest.StatusError{402, err}
 	}
 
 	response, err := apirest.SendTask(kernel, anonymousConsumptionSignature(requestData))
 	if err != nil {
-		return apirest.StatusError{http.StatusInternalServerError, err}
+		return nil, apirest.StatusError{http.StatusInternalServerError, err}
 	}
-	w.Write(response)
 
-	return nil
+	return response, nil
 }
 
-func GetLastAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) error {
+func GetLastAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) (proto.Message, error) {
 	vars := mux.Vars(r)
 	deviceId := vars["deviceId"]
 	database := kernel.Container.MustGet("database").(*gorm.DB)
@@ -166,18 +164,11 @@ func GetLastAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r
 	response.UpdatedAt = int32(consumptionData.UpdatedAt.Unix())
 	response.PhoneNumber = consumptionData.PhoneNumber
 
-	dataData, err := proto.Marshal(response)
-
-	if err != nil {
-		return apirest.StatusError{http.StatusInternalServerError, err}
-	}
-
 	if consumptionData.ID == 0 {
-		return apirest.StatusError{400, fmt.Errorf("Uuid not found")}
+		return nil, apirest.StatusError{400, fmt.Errorf("Uuid not found")}
 	}
-	w.Write(dataData)
 
-	return nil
+	return response, nil
 }
 
 func consumptionSignature (username, password, operator string) (*tasks.Signature){
@@ -235,7 +226,8 @@ func Bootstrap(k *dislet.Kernel) {
 		router := k.Container.MustGet("api").(*mux.Router)
 		router.HandleFunc("/", Index)
 		router.Handle("/login", apirest.Handler{k, Login})
-		router.Handle("/me", apirest.Handler{k, Me})
+		//router.Handle("/me", apirest.Handler{k, Me})
+		router.Handle("/me", apirest.SecureHandler{k, Me})
 		router.HandleFunc("/todos", TodoIndex)
 		router.HandleFunc("/todos/{todoId}", TodoShow)
 		router.Methods("PUT").Path("/este").Name("este").HandlerFunc(Index2)
@@ -254,7 +246,7 @@ func Bootstrap(k *dislet.Kernel) {
 }
 
 
-func GetIndex(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) error {
+func GetIndex(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) (proto.Message, error) {
 
 	fmt.Println("EL OTRO HILO")
 
@@ -283,12 +275,13 @@ func GetIndex(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) err
 		// are worth raising a HTTP 500 over vs. which might just be a HTTP
 		// 404, 403 or 401 (as appropriate). It's also clear where our
 		// handler should stop processing by returning early.
-		return apirest.StatusError{500, err}
+		return nil, apirest.StatusError{500, err}
 	}
 
-	w.Write([]byte(asyncResult.Signature.UUID))
+	return &protomodel.UseLoginResponse{Token: asyncResult.Signature.UUID}, nil
+	//w.Write([]byte(asyncResult.Signature.UUID))
 
-	results, err := asyncResult.Get(time.Duration(time.Millisecond * 5))
+	/*results, err := asyncResult.Get(time.Duration(time.Millisecond * 5))
 	if err != nil {
 		fmt.Println("Getting task result failed with error: %s", err.Error())
 	}
@@ -297,10 +290,10 @@ func GetIndex(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) err
 		asyncResult.Signature.Args[0].Value,
 		asyncResult.Signature.Args[1].Value,
 		results[0].Interface(),
-	)
+	)*/
 
 
-	return nil
+	//return nil
 }
 
 
@@ -344,7 +337,7 @@ func CheckToken(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) e
 
 
 
-func GetConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) error {
+func GetConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) (proto.Message, error) {
 	//server := kernel.Container.MustGet("oauth").(*osin.Server)
 	//database := kernel.Container.MustGet("database").(*gorm.DB)
 
@@ -355,7 +348,7 @@ func GetConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Reques
 	requestData := &protomodel.Credentials{}
 	err = proto.Unmarshal(buf, requestData)
 	if err != nil {
-		return apirest.StatusError{400, err}
+		return nil, apirest.StatusError{400, err}
 	}
 
 	//requestData.Password = "pepe"
@@ -363,7 +356,7 @@ func GetConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Reques
 
 	_, err = apirest.Validate(requestData, &CredentialsValidator{})
 	if err != nil {
-		return apirest.StatusError{400, err}
+		return nil, apirest.StatusError{400, err}
 	}
 
 	/*username := r.Form.Get("username")
@@ -389,14 +382,13 @@ func GetConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Reques
 
 	response, err := apirest.SendTask(kernel, &task0)
 	if err != nil {
-		return apirest.StatusError{http.StatusInternalServerError, err}
+		return nil, apirest.StatusError{http.StatusInternalServerError, err}
 	}
-	w.Write(response)
 
-	return nil
+	return response, nil
 }
 
-func GetTaskState(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) error {
+func GetTaskState(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) (proto.Message, error) {
 	server := kernel.Container.MustGet("machinery").(*machinery.Server)
 	//api := kernel.Container.MustGet("api").(*mux.Router)
 	vars := mux.Vars(r)
@@ -407,16 +399,10 @@ func GetTaskState(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request)
 
 
 	if err != nil {
-		return apirest.StatusError{http.StatusNotFound, fmt.Errorf("Task not found")}
+		return nil, apirest.StatusError{http.StatusNotFound, fmt.Errorf("Task not found")}
 	}
 
-	data, err := apirest.TaskResponseHandler(task)
+	data := apirest.TaskResponseHandler(task)
 
-
-	if err != nil {
-		return apirest.StatusError{http.StatusInternalServerError, err}
-	}
-	w.Write(data)
-
-	return nil
+	return data, nil
 }
