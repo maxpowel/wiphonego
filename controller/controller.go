@@ -24,9 +24,63 @@ type CredentialsValidator struct {
 	Operator string `validate:"required"`
 }
 
+
+func Me(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) error{
+	user, err := apirest.GetUser(kernel, r)
+	if err != nil {
+		fmt.Fprintln(w, err)
+	} else {
+		fmt.Fprintln(w, user.Username)
+	}
+
+	return nil
+}
+
 func Index(w http.ResponseWriter, r *http.Request) {
 
+	u := usermngr.NewUser()
+	u.Username = "pepe"
+	usermngr.PlainPassword(u, "123456")
 	fmt.Fprintln(w, "Welcome!")
+	fmt.Fprintln(w, u.Password)
+	fmt.Fprintln(w, u.Salt)
+}
+
+func Login(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) error{
+	loginData := &protomodel.UserLogin{}
+	err := apirest.GetBody(loginData, r)
+	if err != nil {
+		return apirest.StatusError{Code:401, Err: err}
+	}
+
+	userManager := kernel.Container.MustGet("user_manager").(*usermngr.Manager)
+	user, err := userManager.FindUser(loginData.Username)
+	if err != nil {
+		return apirest.StatusError{Code:404, Err: err}
+	}
+
+	if usermngr.CheckPassword(user, loginData.Password) == nil {
+		token, err := apirest.GenerateToken(kernel, user)
+		if err != nil {
+			return apirest.StatusError{Code:500, Err: err}
+		} else {
+			ts := protomodel.UseLoginResponse{
+				Token: token,
+			}
+
+			data, err := proto.Marshal(&ts)
+			if err != nil {
+				return apirest.StatusError{Code:500, Err: err}
+			}
+
+			w.Write(data)
+		}
+		//w.Write()
+	} else {
+		return apirest.StatusError{Code:401, Err: fmt.Errorf("Invalid password")}
+	}
+
+	return nil
 }
 
 func TodoIndex(w http.ResponseWriter, r *http.Request) {
@@ -180,6 +234,8 @@ func Bootstrap(k *dislet.Kernel) {
 	var baz dislet.OnKernelReady = func(k *dislet.Kernel){
 		router := k.Container.MustGet("api").(*mux.Router)
 		router.HandleFunc("/", Index)
+		router.Handle("/login", apirest.Handler{k, Login})
+		router.Handle("/me", apirest.Handler{k, Me})
 		router.HandleFunc("/todos", TodoIndex)
 		router.HandleFunc("/todos/{todoId}", TodoShow)
 		router.Methods("PUT").Path("/este").Name("este").HandlerFunc(Index2)
