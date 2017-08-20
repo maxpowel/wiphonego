@@ -36,3 +36,20 @@ message AnonymousConsumptionRequest {
   string phoneNumber = 3;
 }
 
+message AnonymousCredentialsRequest {
+  string DeviceId = 1;
+  Credentials Credentials = 2;
+}
+
+message AnonymousCredentialsResponse {
+  int32 CredentialsId = 1;
+  repeated string phoneNumbers = 2;
+}
+
+enum NotificationCommandType {
+    CONSUMPTION = 0;
+}
+
+message NotificationConsumptionCommand {
+  repeated ConsumptionResponse consumption = 1;
+}

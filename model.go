@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-type UserDeviceConsumption struct {
+type PhoneLineConsumption struct {
 	gorm.Model
 	InternetConsumed int64
 	InternetTotal int64
@@ -13,31 +13,43 @@ type UserDeviceConsumption struct {
 	CallTotal int
 	PeriodStart time.Time
 	PeriodEnd time.Time
-	Device UserDevice
-	PhoneNumber string
-	DeviceId int
+	PhoneLine PhoneLine
+	PhoneLineID uint
+
 }
 
 
 
-type UserDevice struct {
+type Device struct {
 	gorm.Model
 	Uuid string
-	Consumptions []UserDeviceConsumption
-
 }
 
+type PhoneLine struct {
+	gorm.Model
+	//ID        string `gorm:"type:char(36);primary_key"`
+	PhoneNumber string
+	Device Device
+	DeviceID uint
+	Credentials Credentials
+	CredentialsID uint
+	//CreatedAt time.Time
+	//UpdatedAt time.Time
+	//DeletedAt *time.Time `sql:"index"`
+}
 
 
 
 type Operator struct{
 	gorm.Model
 	Name string
+	InternalName string
 }
 
 type Credentials struct {
+	gorm.Model
 	Operator Operator
-	Device string
+	OperatorID uint
 	Username string
 	Password string
 }

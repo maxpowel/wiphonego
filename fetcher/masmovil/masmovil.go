@@ -65,13 +65,39 @@ func (f *Fetcher) login() (error) {
 
 }
 
-func (f *Fetcher) GetInternetConsumption(phoneNumber string) (wiphonego.UserDeviceConsumption, error){
+func (f *Fetcher) GetLines() ([]string, error) {
+	err := f.isLogged()
+	if err != nil {
+		loginError := f.login()
+		if loginError != nil {
+			return []string{}, loginError
+		}
+	}
+
+	res, err := f.Fetcher.Get("https://yosoymas.masmovil.es")
+	doc, err := goquery.NewDocumentFromResponse(res)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var lines []string
+
+	// Solo moviles
+	doc.Find(".is-background2").Find(".is-big").Each(func(i int, s *goquery.Selection) {
+		lines = append(lines, strings.Replace(s.Text(), " ", "", -1))
+	})
+
+	return lines, nil
+
+}
+
+func (f *Fetcher) GetInternetConsumption(phoneNumber string) (*wiphonego.PhoneLineConsumption, error){
 	err := f.isLogged()
 	if err != nil {
 		fmt.Println("Loging in")
 		loginError := f.login()
 		if loginError != nil {
-			return wiphonego.UserDeviceConsumption{}, loginError
+			return nil, loginError
 		}
 	} else {
 		fmt.Print("Already logged in")
@@ -88,7 +114,7 @@ func (f *Fetcher) GetInternetConsumption(phoneNumber string) (wiphonego.UserDevi
 	}
 
 	//ci := make(chan InternetConsumption)
-	c := wiphonego.UserDeviceConsumption{}
+	consumtion := &wiphonego.PhoneLineConsumption{}
 	doc.Find(".box-main-content").Find(".progress").Each(func(i int, s *goquery.Selection) {
 		// For each item found, get the band and title
 		//c := s.Find("span").Text()
@@ -99,9 +125,9 @@ func (f *Fetcher) GetInternetConsumption(phoneNumber string) (wiphonego.UserDevi
 			consumed, err := strconv.ParseInt(r[0],10, 64)
 			if err == nil {
 				if i == 0 {
-					c.InternetConsumed = consumed * 1024 * 1024
+					consumtion.InternetConsumed = consumed * 1024 * 1024
 				} else {
-					c.CallConsumed = int(consumed)
+					consumtion.CallConsumed = int(consumed)
 				}
 			}
 
@@ -111,16 +137,16 @@ func (f *Fetcher) GetInternetConsumption(phoneNumber string) (wiphonego.UserDevi
 			}
 
 			if i == 0 {
-				c.InternetTotal = total * 1024 * 1024
+				consumtion.InternetTotal = total * 1024 * 1024
 			} else {
-				c.CallTotal = int(total)
+				consumtion.CallTotal = int(total)
 			}
 
 			fmt.Printf("Gastados %v de %v\n", consumed, total)
 	})
 
 	//c := <- ci
-	return c, nil
+	return consumtion, nil
 	//f.fetcher.LoadCookies("cookies.json")
 
 }

@@ -14,7 +14,9 @@ import (
 	"github.com/maxpowel/dislet/usermngr"
 	"github.com/maxpowel/dislet/apirest"
 	"github.com/maxpowel/wiphonego/protomodel"
-	"github.com/maxpowel/wiphonego"
+
+	"strconv"
+	"github.com/maxpowel/wiphonego/task"
 )
 
 type CredentialsValidator struct {
@@ -108,6 +110,11 @@ type AnonymousConsumptionValidator struct {
 	PhoneNumber  string `validate:"required"`
 }
 
+type AnonymousCredentialsValidator struct {
+	DeviceId  string `validate:"required"`
+	Credentials CredentialsValidator `validate:"required"`
+}
+
 func GetAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) (proto.Message, error) {
 	requestData := &protomodel.AnonymousConsumptionRequest{}
 	err := apirest.GetBody(requestData, r)
@@ -146,7 +153,25 @@ func GetAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *ht
 	return response, nil
 }
 
-func GetLastAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) (proto.Message, error) {
+
+func Consumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) (proto.Message, error) {
+
+	vars := mux.Vars(r)
+	lineId, err := strconv.ParseUint(vars["lineId"], 10, 64)
+	if err != nil {
+		return nil, apirest.StatusError{http.StatusInternalServerError, err}
+	}
+
+	response, err := apirest.SendTask(kernel, task.ConsumptionSignature(uint(lineId)))
+	if err != nil {
+		return nil, apirest.StatusError{http.StatusInternalServerError, err}
+	}
+
+	return response, nil
+}
+
+
+/*func GetLastAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request) (proto.Message, error) {
 	vars := mux.Vars(r)
 	deviceId := vars["deviceId"]
 	database := kernel.Container.MustGet("database").(*gorm.DB)
@@ -170,26 +195,33 @@ func GetLastAnonymousConsumption(kernel *dislet.Kernel, w http.ResponseWriter, r
 
 	return response, nil
 }
+*/
 
-func consumptionSignature (username, password, operator string) (*tasks.Signature){
+
+func anonymousCredentialsSignature (data *protomodel.AnonymousCredentialsRequest) (*tasks.Signature){
 	return &tasks.Signature{
-		Name: "consumption",
+		Name: "anonymousCredentials",
 		Args: []tasks.Arg{
 			{
 				Type:  "string",
-				Value: username,
+				Value: data.Credentials.Username,
 			},
 			{
 				Type:  "string",
-				Value: password,
+				Value: data.Credentials.Password,
 			},
 			{
 				Type:  "string",
-				Value: operator,
+				Value: data.Credentials.Operator,
+			},
+			{
+				Type:  "string",
+				Value: data.DeviceId,
 			},
 		},
 	}
 }
+
 
 func anonymousConsumptionSignature (data *protomodel.AnonymousConsumptionRequest) (*tasks.Signature){
 	return &tasks.Signature{
@@ -220,6 +252,40 @@ func anonymousConsumptionSignature (data *protomodel.AnonymousConsumptionRequest
 }
 
 
+/*
+cannot use AnonymousCredentials
+(type func(*dislet.Kernel, http.ResponseWriter, *http.Request, *protomodel.AnonymousCredentialsRequest)    ("github.com/golang/protobuf/proto".Message, error)) as
+ type func(*dislet.Kernel, http.ResponseWriter, *http.Request, "github.com/golang/protobuf/proto".Message) ("github.com/golang/protobuf/proto".Message, error) in field value
+
+ */
+func AnonymousCredentials(kernel *dislet.Kernel, w http.ResponseWriter, r *http.Request, message proto.Message) (proto.Message, error) {
+
+	data := message.(*protomodel.AnonymousCredentialsRequest)
+	k := &AnonymousCredentialsValidator{}
+	if data.Credentials != nil {
+		k.Credentials = CredentialsValidator{
+			Username: data.Credentials.Username,
+			Password: data.Credentials.Password,
+			Operator: data.Credentials.Operator,
+		}
+	}
+	_, err := apirest.Validate(message, k)
+
+	if err != nil {
+		return nil, apirest.StatusError{402, err}
+	}
+
+	/*response := &protomodel.AnonymousCredentialsResponse{
+		CredentialsId: uuid.NewV4().String(),
+		PhoneNumbers: []string{"677077536","782954859"},
+	}*/
+	response, err := apirest.SendTask(kernel, anonymousCredentialsSignature(data))
+	if err != nil {
+		return nil, apirest.StatusError{http.StatusInternalServerError, err}
+	}
+
+	return response, nil
+}
 
 func Bootstrap(k *dislet.Kernel) {
 	var baz dislet.OnKernelReady = func(k *dislet.Kernel){
@@ -234,7 +300,9 @@ func Bootstrap(k *dislet.Kernel) {
 
 		router.Handle("/tarea", apirest.Handler{k, GetIndex})
 		router.Handle("/anonymousConsumption", apirest.Handler{k, GetAnonymousConsumption}).Methods("POST")
-		router.Handle("/anonymousConsumption/{deviceId}", apirest.Handler{k, GetLastAnonymousConsumption})
+		router.Handle("/anonymous/credentials", apirest.MessageHandler{k, AnonymousCredentials, &protomodel.AnonymousCredentialsRequest{}}).Methods("POST")
+		router.Handle("/updateConsumption/{lineId}", apirest.Handler{k, Consumption}).Methods("GET")
+		//router.Handle("/anonymousConsumption/{deviceId}", apirest.Handler{k, GetLastAnonymousConsumption})
 		router.Handle("/consumption", apirest.Handler{k, GetConsumption})
 		router.Handle("/consumption/{taskUid}", apirest.Handler{k, GetTaskState})
 		router.Handle("/task/{taskUid}", apirest.Handler{k, GetTaskState})
