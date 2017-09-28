@@ -8,8 +8,8 @@ import (
 	"github.com/RichardKnop/machinery/v1"
 	"log"
 	"github.com/jinzhu/gorm"
-	"net/http"
-	"bytes"
+	//"net/http"
+	//"bytes"
 	"encoding/json"
 	"github.com/golang/protobuf/proto"
 	"github.com/maxpowel/wiphonego/protomodel"
@@ -18,11 +18,14 @@ import (
 
 	"github.com/maxpowel/dislet/apirest"
 	"github.com/RichardKnop/machinery/v1/tasks"
+	"strconv"
+	"crypto/md5"
+	"io"
 )
 
 var kernel *dislet.Kernel
 
-func GetConsumptionTask(phoneLineId uint) (string, map[string]string, error){
+func GetConsumption(phoneLineId uint) (string, map[string]string, error){
 	db := kernel.Container.MustGet("database").(*gorm.DB)
 
 	phoneLine := &wiphonego.PhoneLine{}
@@ -73,22 +76,35 @@ func GetConsumptionTask(phoneLineId uint) (string, map[string]string, error){
 		fmt.Println(string(jsonValue))
 
 		//resp, err := http.NewRequest("POST", "http://localhost:8088/api/push", bytes.NewBuffer(jsonValue))
-		req, _ := http.NewRequest("POST", "http://localhost:8088/api/push", bytes.NewBuffer(jsonValue))
+		/*req, _ := http.NewRequest("POST", "http://localhost:8088/api/push", bytes.NewBuffer(jsonValue))
 		client := &http.Client{}
-		client.Do(req)
+		client.Do(req)*/
 
 
 		params := make(map[string]string)
 		params["id"] = fmt.Sprint(consumption.ID)
+		h := md5.New()
+		io.WriteString(h, strconv.Itoa(consumption.CallConsumed))
+		io.WriteString(h, ":")
+		io.WriteString(h, strconv.FormatInt(consumption.InternetConsumed,10))
+		params["consumptionHash"] =  fmt.Sprintf("%x", h.Sum(nil))
 		return "Consumption created with id {id}", params, nil
 	}
-
-
-
 
 	params := make(map[string]string)
 	params["operator"] = phoneLine.Credentials.Operator.InternalName
 	return "Operator {operator} is not available", params, nil
+}
+
+
+func GetConsumptionTask(phoneLineId uint) (string, map[string]string, error){
+	res, mapError, err := GetConsumption(phoneLineId)
+	if err != nil {
+		// Only schedule if everything went fine
+		startSchedule(phoneLineId)
+	}
+
+	return res, mapError, err
 
 }
 
@@ -185,16 +201,25 @@ func AnonymousCredentialsTask(username, password, operator, deviceId string) (st
 
 }
 
+
+//startSchedule(8)
+
+
 func Bootstrap(k *dislet.Kernel) {
 	kernel = k
 	var baz dislet.OnKernelReady = func(k *dislet.Kernel){
 		server := k.Container.MustGet("machinery").(*machinery.Server)
+		// Model
+		db := kernel.Container.MustGet("database").(*gorm.DB)
+		db.AutoMigrate(&MysqlJob{})
+
 		// Register tasks
 
 		err := server.RegisterTasks(map[string]interface{}{
 			"consumption": GetConsumptionTask,
 			//"anonymousConsumption": GetAnonymousConsumptionTask,
 			"anonymousCredentials": AnonymousCredentialsTask,
+			"consumptionPeriodic": PeriodicConsumption,
 		})
 
 		if err != nil {
